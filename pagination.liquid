@@ -1,0 +1,126 @@
+{{ 'component-pagination.css' | asset_url | stylesheet_tag }}
+
+{% assign collection_total_products_count = collection.products_count %}
+{% assign products_per_page = paginate.page_size %}
+{% assign viewed_products_count = products_per_page | times: paginate.current_page %}
+
+<div class="pagination-container">
+  <div class="pagination-products-count-display">
+    You've viewed 
+    {% if viewed_products_count > collection_total_products_count %}
+      {{ collection_total_products_count }}
+    {% else %}
+      {{ viewed_products_count }}
+    {% endif %}
+    of {{ collection_total_products_count }} products
+  </div>
+  <div class="progress-bar-container">
+    <div id="progress-bar" class="progress-bar" style="width: {{ viewed_products_count | divided_by: collection_total_products_count | times: 100 }}%;">
+    </div>
+  </div>
+  <div class="pagination-products-wrapper">
+    <div class="pagination-pages">
+      <ol id="pagination">
+      </ol>
+    </div>
+    <div class="pagination-btn-wrapper">
+      <div id="load-more" class="pagination-btn-load-more">
+        <span>Load Next</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const totalPages = {{ paginate.pages }};
+    let currentPage = {{ paginate.current_page }};
+    const paginationContainer = document.getElementById('pagination');
+    const collectionTotalProductsCount = {{ collection_total_products_count }};
+    const productsPerPage = {{ products_per_page }};
+    
+    const loadMoreButton = document.getElementById('load-more');
+    const productGrid = document.getElementById('product-grid');
+    let currentPageTest = currentPage;
+    
+    loadMoreButton.addEventListener('click', function() {
+        if (currentPageTest < totalPages) {
+            currentPageTest++;
+            loadMoreProducts(currentPageTest);
+        }
+    });
+
+    function loadMoreProducts(page) {
+        $.ajax({
+            url: `/collections/{{ collection.handle }}?page=${page}`,
+            type: 'GET',
+            success: function(data) {
+                var parser = new DOMParser();
+                var doc = parser.parseFromString(data, 'text/html');
+                var newProducts = doc.querySelectorAll('#product-grid > li');
+                newProducts.forEach(function(product) {
+                    productGrid.appendChild(product);
+                });
+
+                updateProgressBarAndProductCount(page);
+
+                window.history.pushState({page: page}, "", `?page=${page}`);
+
+                updatePagination(page);
+
+                if (currentPageTest >= totalPages) {
+                    loadMoreButton.style.display = 'none';
+                }
+            }
+        });
+    }
+    
+    function updatePagination(currentPage) {
+        let pagesToShow = [1];
+        if (currentPage > 2) pagesToShow.push('...');
+        
+        for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+            pagesToShow.push(i);
+        }
+        
+        if (currentPage < totalPages - 1) pagesToShow.push('...');
+        pagesToShow.push(totalPages);
+        
+        paginationContainer.innerHTML = pagesToShow.map(page => {
+            if (page === '...') return '<li><span class="pagination__item">...</span></li>';
+            return `<li><a href="?page=${page}" class="pagination__item link${page === currentPage ? ' pagination__item--current light' : ''}" aria-label="Page ${page}">${page}</a></li>`;
+        }).join('');
+        
+        addClickEvents();
+    }
+    
+    function addClickEvents() {
+        paginationContainer.querySelectorAll('.link').forEach(link => {
+            link.addEventListener('click', function(event) {
+                event.preventDefault();
+                const selectedPage = parseInt(this.textContent);
+                updatePagination(selectedPage);
+                updateProgressBarAndProductCount(selectedPage);
+                window.location.href = `?page=${selectedPage}`;
+            });
+        });
+    }
+    
+    function updateProgressBarAndProductCount(page) {
+        const viewedProductsCount = productsPerPage * page;
+        const progressBar = document.getElementById('progress-bar');
+        const progressPercentage = Math.min((viewedProductsCount / collectionTotalProductsCount) * 100, 100);
+        progressBar.style.width = `${progressPercentage}%`;
+    
+        const productCountDisplay = document.querySelector('.pagination-products-count-display');
+        productCountDisplay.innerHTML = `
+            You've viewed 
+            ${viewedProductsCount > collectionTotalProductsCount ? collectionTotalProductsCount : viewedProductsCount}
+            of ${collectionTotalProductsCount} products
+        `;
+    }
+    
+    updatePagination(currentPage);
+    updateProgressBarAndProductCount(currentPage);
+  });
+</script>
